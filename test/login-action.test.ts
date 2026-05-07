@@ -10,6 +10,7 @@ describe('runLoginAction', () => {
     const devicePath = join(dir, 'device-id.txt')
     const api = {
       sendCaptcha: vi.fn().mockResolvedValue(undefined),
+      checkCaptcha: vi.fn(),
       loginWithCaptcha: vi.fn(),
       userCenterLogin: vi.fn(),
       getBindRole: vi.fn(),
@@ -39,6 +40,7 @@ describe('runLoginAction', () => {
     const accountsPath = join(dir, 'updated-accounts.json')
     const api = {
       sendCaptcha: vi.fn(),
+      checkCaptcha: vi.fn().mockResolvedValue(undefined),
       loginWithCaptcha: vi.fn().mockResolvedValue({ token: 'laohu-token', userId: 'laohu-user' }),
       userCenterLogin: vi.fn().mockResolvedValue({
         accessToken: 'access-token',
@@ -71,6 +73,7 @@ describe('runLoginAction', () => {
         api,
       })
 
+      expect(api.checkCaptcha).toHaveBeenCalledWith('13800138000', '123456', 'device-from-secret')
       expect(api.loginWithCaptcha).toHaveBeenCalledWith('13800138000', '123456', 'device-from-secret')
       expect(api.userCenterLogin).toHaveBeenCalledWith('laohu-token', 'laohu-user', 'device-from-secret')
       expect(JSON.parse(await readFile(accountsPath, 'utf8'))).toEqual([
@@ -86,7 +89,11 @@ describe('runLoginAction', () => {
           name: '主账号',
           uid: 'tjd-uid',
           deviceId: 'device-from-secret',
+          accessToken: 'access-token',
           refreshToken: 'refresh-token',
+          laohuToken: 'laohu-token',
+          laohuUserId: 'laohu-user',
+          tokenUpdatedAt: expect.any(String),
           roleId: 'role-1',
           roleName: '角色一',
         },

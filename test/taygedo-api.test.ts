@@ -46,6 +46,15 @@ describe('TaygedoApi', () => {
     )
   })
 
+  it('classifies an empty HTTP 402 refresh response as a rejected refresh token', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 402 }))
+    const api = new TaygedoApi({ fetch: fetchMock })
+
+    await expect(api.refreshToken('old-refresh', 'device-1')).rejects.toThrow(
+      'REFRESH_REJECTED_402: refreshToken 已失效，请重新登录',
+    )
+  })
+
   it('calls app and game signin endpoints with the access token', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(
@@ -92,6 +101,7 @@ describe('TaygedoApi', () => {
   it('sends captcha and exchanges login credentials through the laohu and usercenter endpoints', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ code: 0, message: 'ok' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 0, message: 'ok' }), { status: 200 }))
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ code: 0, message: 'ok', result: { token: 'laohu-token', userId: 'user-1' } }), { status: 200 }),
       )
@@ -101,6 +111,7 @@ describe('TaygedoApi', () => {
     const api = new TaygedoApi({ fetch: fetchMock })
 
     await api.sendCaptcha('13800138000', 'device-1')
+    await expect(api.checkCaptcha('13800138000', '123456', 'device-1')).resolves.toBeUndefined()
     expect(await api.loginWithCaptcha('13800138000', '123456', 'device-1')).toEqual({
       token: 'laohu-token',
       userId: 'user-1',
@@ -120,13 +131,20 @@ describe('TaygedoApi', () => {
     )
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      'https://user.laohu.com/openApi/sms/new/login',
+      'https://user.laohu.com/m/newApi/checkPhoneCaptchaWithOutLogin',
       expect.objectContaining({
         method: 'POST',
       }),
     )
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
+      'https://user.laohu.com/openApi/sms/new/login',
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
       'https://bbs-api.tajiduo.com/usercenter/api/login',
       expect.objectContaining({
         method: 'POST',

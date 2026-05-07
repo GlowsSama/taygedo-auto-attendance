@@ -6,11 +6,14 @@ import { TAYGEDO_GAME_IDS } from './taygedo/games.js'
 
 export interface RunnerDependencies {
   accountsSecret: string
-  api?: Pick<TaygedoApi, 'refreshToken' | 'getGameRoles' | 'appSignin' | 'getSigninState' | 'getSigninRewards' | 'gameSignin'>
+  api?: AttendanceApi
   notificationUrls?: string[]
   maxRetries?: number
   secretWriter?: (payload: string) => Promise<void>
 }
+
+type AttendanceApi = Pick<TaygedoApi, 'refreshToken' | 'getGameRoles' | 'appSignin' | 'getSigninState' | 'getSigninRewards' | 'gameSignin'>
+  & Partial<Pick<TaygedoApi, 'userCenterLogin'>>
 
 export interface RunAttendanceResult {
   updatedAccounts: TaygedoAccount[]
@@ -42,56 +45,19 @@ export async function runAttendance(deps: RunnerDependencies): Promise<RunAttend
   const accounts = parseAccountsSecret(deps.accountsSecret)
   const api = deps.api ?? new TaygedoApi()
   const updatedAccounts: TaygedoAccount[] = []
-  let refreshedCount = 0
+  let secretUpdateCount = 0
   const failedAccounts: string[] = []
   const accountSummaries: AccountRunSummary[] = []
 
   for (const account of accounts) {
     try {
       const accountRun = await withRetries(async () => {
-        const refreshed = await api.refreshToken(account.refreshToken, account.deviceId)
-        const gameRoles = await getAllGameRoles(api, refreshed.accessToken, account.uid, account.deviceId)
-        const firstRole = gameRoles[0]
-        const roleId = firstRole?.roleId ?? account.roleId
-
-        const appSignin = await api.appSignin(refreshed.accessToken, account.uid, account.deviceId)
-        const gameSignins: AccountRunSummary['gameSignins'] = []
-        for (const role of gameRoles) {
-          const signinState = await api.getSigninState(refreshed.accessToken, role.gameId)
-          const signinRewards = await api.getSigninRewards(refreshed.accessToken, role.gameId)
-          await api.gameSignin(refreshed.accessToken, role.roleId, role.gameId)
-          gameSignins.push({
-            gameId: role.gameId,
-            roleName: role.roleName ?? role.roleId,
-            days: signinState.days,
-            reward: signinRewards[signinState.days - 1],
-            success: true,
-          })
-        }
-
-        const updated: TaygedoAccount = {
-          ...account,
-          refreshToken: refreshed.refreshToken,
-        }
-        if (roleId) {
-          updated.roleId = roleId
-        }
-        if (firstRole?.roleName ?? account.roleName) {
-          updated.roleName = firstRole?.roleName ?? account.roleName
-        }
-        return {
-          updatedAccount: updated,
-          summary: {
-            id: account.id,
-            name: account.name,
-            success: true,
-            appSignin,
-            gameSignins,
-          } satisfies AccountRunSummary,
-        }
+        return await runAccount(api, account)
       }, deps.maxRetries ?? 3)
 
-      refreshedCount++
+      if (accountRun.shouldUpdateSecret) {
+        secretUpdateCount++
+      }
       updatedAccounts.push(accountRun.updatedAccount)
       accountSummaries.push(accountRun.summary)
     }
@@ -108,7 +74,7 @@ export async function runAttendance(deps: RunnerDependencies): Promise<RunAttend
     }
   }
 
-  if (refreshedCount > 0 && deps.secretWriter) {
+  if (secretUpdateCount > 0 && deps.secretWriter) {
     await deps.secretWriter(JSON.stringify(updatedAccounts, null, 2))
   }
 
@@ -127,6 +93,137 @@ export async function runAttendance(deps: RunnerDependencies): Promise<RunAttend
     updatedAccounts,
     summary,
   }
+}
+
+interface AccountRunResult {
+  updatedAccount: TaygedoAccount
+  shouldUpdateSecret: boolean
+  summary: AccountRunSummary
+}
+
+async function runAccount(
+  api: AttendanceApi,
+  account: TaygedoAccount,
+): Promise<AccountRunResult> {
+  if (account.accessToken) {
+    try {
+      return await signWithSession(api, account, account.accessToken, false)
+    }
+    catch (error) {
+      if (!isAuthError(error)) {
+        throw error
+      }
+    }
+  }
+
+  const session = await refreshOrRebuildSession(api, account)
+  return await signWithSession(api, session.account, session.accessToken, true)
+}
+
+async function refreshOrRebuildSession(
+  api: Pick<TaygedoApi, 'refreshToken'> & Partial<Pick<TaygedoApi, 'userCenterLogin'>>,
+  account: TaygedoAccount,
+): Promise<{ account: TaygedoAccount, accessToken: string }> {
+  try {
+    const refreshed = await api.refreshToken(account.refreshToken, account.deviceId)
+    const updatedAccount = withSession(account, {
+      accessToken: refreshed.accessToken,
+      refreshToken: refreshed.refreshToken,
+      uid: refreshed.uid,
+    })
+    return {
+      account: updatedAccount,
+      accessToken: refreshed.accessToken,
+    }
+  }
+  catch (error) {
+    if (!isRefreshRejected(error) || !account.laohuToken || !account.laohuUserId || !api.userCenterLogin) {
+      throw error
+    }
+  }
+
+  const rebuilt = await api.userCenterLogin(account.laohuToken, account.laohuUserId, account.deviceId)
+  const updatedAccount = withSession(account, {
+    accessToken: rebuilt.accessToken,
+    refreshToken: rebuilt.refreshToken,
+    uid: rebuilt.uid,
+  })
+  return {
+    account: updatedAccount,
+    accessToken: rebuilt.accessToken,
+  }
+}
+
+async function signWithSession(
+  api: Pick<TaygedoApi, 'getGameRoles' | 'appSignin' | 'getSigninState' | 'getSigninRewards' | 'gameSignin'>,
+  account: TaygedoAccount,
+  accessToken: string,
+  shouldUpdateSecret: boolean,
+): Promise<AccountRunResult> {
+  const gameRoles = await getAllGameRoles(api, accessToken, account.uid, account.deviceId)
+  const firstRole = gameRoles[0]
+  const roleId = firstRole?.roleId ?? account.roleId
+
+  const appSignin = await api.appSignin(accessToken, account.uid, account.deviceId)
+  const gameSignins: AccountRunSummary['gameSignins'] = []
+  for (const role of gameRoles) {
+    const signinState = await api.getSigninState(accessToken, role.gameId)
+    const signinRewards = await api.getSigninRewards(accessToken, role.gameId)
+    await api.gameSignin(accessToken, role.roleId, role.gameId)
+    gameSignins.push({
+      gameId: role.gameId,
+      roleName: role.roleName ?? role.roleId,
+      days: signinState.days,
+      reward: signinRewards[signinState.days - 1],
+      success: true,
+    })
+  }
+
+  const updatedAccount = {
+    ...account,
+  }
+  if (roleId) {
+    updatedAccount.roleId = roleId
+  }
+  if (firstRole?.roleName ?? account.roleName) {
+    updatedAccount.roleName = firstRole?.roleName ?? account.roleName
+  }
+
+  return {
+    updatedAccount,
+    shouldUpdateSecret,
+    summary: {
+      id: account.id,
+      name: account.name,
+      success: true,
+      appSignin,
+      gameSignins,
+    },
+  }
+}
+
+function withSession(
+  account: TaygedoAccount,
+  session: { accessToken: string, refreshToken: string, uid?: string },
+): TaygedoAccount {
+  return {
+    ...account,
+    uid: session.uid ?? account.uid,
+    accessToken: session.accessToken,
+    refreshToken: session.refreshToken,
+    tokenUpdatedAt: new Date().toISOString(),
+  }
+}
+
+function isRefreshRejected(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('REFRESH_REJECTED_402')
+}
+
+function isAuthError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false
+  }
+  return /AUTH_EXPIRED|HTTP 40[123]|登录|token|未授权|请先|过期|失效|invalid_token/i.test(error.message)
 }
 
 async function getAllGameRoles(

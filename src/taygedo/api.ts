@@ -79,6 +79,43 @@ export class TaygedoApi {
     }
   }
 
+  async checkCaptcha(phone: string, captcha: string, deviceId: string): Promise<void> {
+    const body = signedLaohuBody({
+      deviceType: 'LGE-AN10',
+      deviceId,
+      deviceName: 'LGE-AN10',
+      t: String(Math.floor(Date.now() / 1000)),
+      areaCodeId: '1',
+      appId: '10550',
+      deviceSys: '12',
+      cellphone: phone,
+      captcha,
+      deviceModel: 'LGE-AN10',
+      sdkVersion: '4.129.0',
+      bid: 'com.pwrd.htassistant',
+      channelId: '1',
+    })
+
+    const response = await this.fetchImpl(`${LAOHU_BASE_URL}/m/newApi/checkPhoneCaptchaWithOutLogin`, {
+      method: 'POST',
+      headers: {
+        platform: 'android',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body,
+    })
+
+    const data = await readJson(response, 'checkCaptcha') as {
+      code?: number
+      message?: string
+      msg?: string
+    }
+
+    if (!response.ok || data.code !== 0) {
+      throw new Error(data.message ?? data.msg ?? 'checkCaptcha request failed')
+    }
+  }
+
   async loginWithCaptcha(phone: string, captcha: string, deviceId: string): Promise<LoginWithCaptchaResponse> {
     const body = signedLaohuBody({
       deviceType: 'LGE-AN10',
@@ -182,6 +219,10 @@ export class TaygedoApi {
         'User-Agent': 'okhttp/4.12.0',
       },
     })
+
+    if (response.status === 402) {
+      throw new Error('REFRESH_REJECTED_402: refreshToken 已失效，请重新登录')
+    }
 
     const data = await readJson(response, 'refreshToken') as {
       code?: number

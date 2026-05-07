@@ -11,6 +11,10 @@ describe('parseAccountsSecret', () => {
           uid: '123456',
           deviceId: 'abcdef1234567890',
           refreshToken: 'refresh-token',
+          accessToken: 'access-token',
+          laohuToken: 'laohu-token',
+          laohuUserId: 'laohu-user',
+          tokenUpdatedAt: '2026-05-07T00:00:00.000Z',
           roleId: 'role-1',
           roleName: '角色一',
         },
@@ -24,6 +28,10 @@ describe('parseAccountsSecret', () => {
         uid: '123456',
         deviceId: 'abcdef1234567890',
         refreshToken: 'refresh-token',
+        accessToken: 'access-token',
+        laohuToken: 'laohu-token',
+        laohuUserId: 'laohu-user',
+        tokenUpdatedAt: '2026-05-07T00:00:00.000Z',
         roleId: 'role-1',
         roleName: '角色一',
       },
@@ -66,5 +74,22 @@ describe('parseAccountsSecret', () => {
         ]),
       ),
     ).toThrow('Duplicate account id: main')
+  })
+
+  it('rejects empty optional session fields', () => {
+    expect(() =>
+      parseAccountsSecret(
+        JSON.stringify([
+          {
+            id: 'main',
+            name: '主账号',
+            uid: '123456',
+            deviceId: 'device-a',
+            refreshToken: 'refresh-a',
+            accessToken: '',
+          },
+        ]),
+      ),
+    ).toThrow('Optional field accessToken must be a non-empty string when provided')
   })
 })

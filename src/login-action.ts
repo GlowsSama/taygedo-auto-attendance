@@ -7,7 +7,7 @@ import { parseAccountsSecret, type TaygedoAccount } from './config/accounts.js'
 
 export interface LoginActionDependencies {
   env?: Record<string, string | undefined>
-  api?: Pick<TaygedoApi, 'sendCaptcha' | 'loginWithCaptcha' | 'userCenterLogin' | 'getBindRole'>
+  api?: Pick<TaygedoApi, 'sendCaptcha' | 'checkCaptcha' | 'loginWithCaptcha' | 'userCenterLogin' | 'getBindRole'>
   generateDeviceId?: () => string
 }
 
@@ -37,16 +37,22 @@ export async function runLoginAction(deps: LoginActionDependencies = {}): Promis
   const accountId = requireEnv(env, 'TAYGEDO_LOGIN_ACCOUNT_ID')
   const accountName = optionalEnv(env, 'TAYGEDO_LOGIN_ACCOUNT_NAME') ?? accountId
 
+  await api.checkCaptcha(phone, captcha, deviceId)
   const loginResult = await api.loginWithCaptcha(phone, captcha, deviceId)
   const userCenter = await api.userCenterLogin(loginResult.token, loginResult.userId, deviceId)
   const role = await tryGetBindRole(api, userCenter.accessToken, userCenter.uid)
+  const tokenUpdatedAt = new Date().toISOString()
 
   const nextAccount: TaygedoAccount = {
     id: accountId,
     name: accountName,
     uid: userCenter.uid,
     deviceId,
+    accessToken: userCenter.accessToken,
     refreshToken: userCenter.refreshToken,
+    laohuToken: loginResult.token,
+    laohuUserId: loginResult.userId,
+    tokenUpdatedAt,
   }
   if (role.roleId) {
     nextAccount.roleId = role.roleId

@@ -4,6 +4,10 @@ export interface TaygedoAccount {
   uid: string
   deviceId: string
   refreshToken: string
+  accessToken?: string
+  laohuToken?: string
+  laohuUserId?: string
+  tokenUpdatedAt?: string
   roleId?: string
   roleName?: string
 }
@@ -33,6 +37,11 @@ export function parseAccountsSecret(secret: string): TaygedoAccount[] {
       deviceId: requireString(account, 'deviceId', index, id),
       refreshToken: requireString(account, 'refreshToken', index, id),
     }
+
+    assignOptionalString(parsedAccount, account, 'accessToken')
+    assignOptionalString(parsedAccount, account, 'laohuToken')
+    assignOptionalString(parsedAccount, account, 'laohuUserId')
+    assignOptionalString(parsedAccount, account, 'tokenUpdatedAt')
 
     const roleId = optionalString(account, 'roleId')
     const roleName = optionalString(account, 'roleName')
@@ -73,4 +82,15 @@ function optionalString(account: Record<string, unknown>, field: keyof TaygedoAc
     throw new Error(`Optional field ${field} must be a non-empty string when provided`)
   }
   return value
+}
+
+function assignOptionalString(
+  parsedAccount: TaygedoAccount,
+  account: Record<string, unknown>,
+  field: keyof TaygedoAccount,
+): void {
+  const value = optionalString(account, field)
+  if (value) {
+    parsedAccount[field] = value
+  }
 }

@@ -148,7 +148,7 @@ account_name=小号
 
 正常情况下不需要手动写这个 Secret，使用 `塔吉多登录` 工作流即可自动生成。
 
-如果你已经通过其他工具拿到了 `uid`、`deviceId`、`refreshToken`，也可以手动创建：
+如果你已经通过其他工具拿到了 `uid`、`deviceId`、`refreshToken`，也可以手动创建。推荐通过登录工作流生成完整字段，因为它会额外保存 `accessToken` 和老虎登录凭证，用于减少刷新登录态的次数：
 
 ```json
 [
@@ -157,7 +157,11 @@ account_name=小号
     "name": "主账号",
     "uid": "123456",
     "deviceId": "abcdef1234567890",
+    "accessToken": "your-access-token",
     "refreshToken": "your-refresh-token",
+    "laohuToken": "your-laohu-token",
+    "laohuUserId": "your-laohu-user-id",
+    "tokenUpdatedAt": "2026-05-07T00:00:00.000Z",
     "roleId": "optional-role-id",
     "roleName": "optional-role-name"
   }
@@ -170,7 +174,11 @@ account_name=小号
 - `name`：账号显示名，自定义
 - `uid`：塔吉多用户 ID
 - `deviceId`：登录设备 ID
+- `accessToken`：可选，签到优先使用的访问凭证
 - `refreshToken`：刷新凭证
+- `laohuToken`：可选，老虎登录凭证，用于 `refreshToken` 被拒绝后重建塔吉多会话
+- `laohuUserId`：可选，老虎账号 ID，和 `laohuToken` 配套使用
+- `tokenUpdatedAt`：可选，凭证最近更新时间
 - `roleId`：可选，兼容旧配置
 - `roleName`：可选，兼容旧配置
 
@@ -204,12 +212,13 @@ account_name=小号
 签到流程：
 
 1. 读取 `TAYGEDO_ACCOUNTS`
-2. 用 `refreshToken` 换取新的 `accessToken` 和 `refreshToken`
-3. 执行塔吉多 APP 签到
-4. 遍历全部已知游戏并获取绑定角色
-5. 对已绑定角色的游戏执行签到
-6. 在日志和通知里输出中文结果
-7. 将更新后的账号 JSON 写回 `TAYGEDO_ACCOUNTS`
+2. 如果账号已有 `accessToken`，优先直接签到，不主动刷新登录态
+3. 只有 `accessToken` 明确失效时，才用 `refreshToken` 换取新的凭证
+4. 如果 `refreshToken` 返回 402 且账号保存了 `laohuToken`/`laohuUserId`，尝试重建塔吉多会话
+5. 执行塔吉多 APP 签到
+6. 遍历全部已知游戏并获取绑定角色
+7. 对已绑定角色的游戏执行签到
+8. 只有凭证刷新或重建成功时，才将更新后的账号 JSON 写回 `TAYGEDO_ACCOUNTS`
 
 ## 通知
 
@@ -254,7 +263,7 @@ account_name=主账号
 
 ### 为什么要先创建 GH_SECRET_UPDATE_TOKEN？
 
-登录成功后需要把账号写入 `TAYGEDO_ACCOUNTS`，签到后也需要把新的 `refreshToken` 写回 `TAYGEDO_ACCOUNTS`。这两个动作都依赖 `GH_SECRET_UPDATE_TOKEN`。
+登录成功后需要把账号写入 `TAYGEDO_ACCOUNTS`。签到时如果复用已有 `accessToken` 成功，就不会写回 Secret；只有刷新或重建凭证成功时才会写回。这两个写回动作都依赖 `GH_SECRET_UPDATE_TOKEN`。
 
 ### deviceId 是什么？
 
@@ -263,6 +272,8 @@ account_name=主账号
 ### refreshToken 失效怎么办？
 
 重新运行 `塔吉多登录`，用短信验证码登录一次。使用相同的 `account_id` 会覆盖旧账号配置。
+
+如果日志里出现 `REFRESH_REJECTED_402`，说明服务端已经拒绝当前 `refreshToken`。这类失败不会覆盖 `TAYGEDO_ACCOUNTS`，需要重新运行登录工作流生成新的完整账号配置。
 
 ### 所有游戏都会签到吗？
 

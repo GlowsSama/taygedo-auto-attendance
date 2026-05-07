@@ -44,7 +44,9 @@ describe('runAttendance', () => {
         name: '主账号',
         uid: '1',
         deviceId: 'device-1',
+        accessToken: 'access-main',
         refreshToken: 'new-main',
+        tokenUpdatedAt: expect.any(String),
         roleId: 'role-1',
         roleName: '角色一',
       },
@@ -85,6 +87,163 @@ describe('runAttendance', () => {
     })
 
     expect(secretWriter).not.toHaveBeenCalled()
+  })
+
+  it('uses a stored accessToken without refreshing or writing the secret', async () => {
+    const secretWriter = vi.fn()
+    const api = {
+      refreshToken: vi.fn(),
+      userCenterLogin: vi.fn(),
+      getGameRoles: vi.fn()
+        .mockResolvedValueOnce({ roles: [{ roleId: 'role-1256-a', roleName: '幻塔A' }] })
+        .mockResolvedValueOnce({ roles: [] })
+        .mockResolvedValueOnce({ roles: [] }),
+      appSignin: vi.fn().mockResolvedValue({ exp: 10, goldCoin: 20 }),
+      getSigninState: vi.fn().mockResolvedValue({ days: 1 }),
+      getSigninRewards: vi.fn().mockResolvedValue([{ name: '奖励一', num: 1 }]),
+      gameSignin: vi.fn().mockResolvedValue(undefined),
+    }
+
+    const result = await runAttendance({
+      accountsSecret: JSON.stringify([
+        {
+          id: 'main',
+          name: '主账号',
+          uid: '1',
+          deviceId: 'device-1',
+          accessToken: 'stored-access',
+          refreshToken: 'old-main',
+        },
+      ]),
+      api,
+      maxRetries: 1,
+      secretWriter,
+    })
+
+    expect(api.refreshToken).not.toHaveBeenCalled()
+    expect(api.getGameRoles).toHaveBeenNthCalledWith(1, 'stored-access', '1', 'device-1', '1256')
+    expect(api.appSignin).toHaveBeenCalledWith('stored-access', '1', 'device-1')
+    expect(api.gameSignin).toHaveBeenCalledWith('stored-access', 'role-1256-a', '1256')
+    expect(secretWriter).not.toHaveBeenCalled()
+    expect(result.updatedAccounts[0]?.refreshToken).toBe('old-main')
+  })
+
+  it('refreshes and writes tokens only after the stored accessToken is rejected', async () => {
+    const secretWriter = vi.fn()
+    const api = {
+      refreshToken: vi.fn().mockResolvedValue({ accessToken: 'new-access', refreshToken: 'new-refresh', uid: '1' }),
+      userCenterLogin: vi.fn(),
+      getGameRoles: vi.fn()
+        .mockRejectedValueOnce(new Error('AUTH_EXPIRED: token expired'))
+        .mockResolvedValueOnce({ roles: [{ roleId: 'role-1256-a', roleName: '幻塔A' }] })
+        .mockResolvedValueOnce({ roles: [] })
+        .mockResolvedValueOnce({ roles: [] }),
+      appSignin: vi.fn().mockResolvedValue({ exp: 10, goldCoin: 20 }),
+      getSigninState: vi.fn().mockResolvedValue({ days: 1 }),
+      getSigninRewards: vi.fn().mockResolvedValue([{ name: '奖励一', num: 1 }]),
+      gameSignin: vi.fn().mockResolvedValue(undefined),
+    }
+
+    const result = await runAttendance({
+      accountsSecret: JSON.stringify([
+        {
+          id: 'main',
+          name: '主账号',
+          uid: '1',
+          deviceId: 'device-1',
+          accessToken: 'stored-access',
+          refreshToken: 'old-main',
+        },
+      ]),
+      api,
+      maxRetries: 1,
+      secretWriter,
+    })
+
+    expect(api.refreshToken).toHaveBeenCalledWith('old-main', 'device-1')
+    expect(result.updatedAccounts[0]).toEqual(expect.objectContaining({
+      accessToken: 'new-access',
+      refreshToken: 'new-refresh',
+      tokenUpdatedAt: expect.any(String),
+    }))
+    expect(secretWriter).toHaveBeenCalledWith(JSON.stringify(result.updatedAccounts, null, 2))
+  })
+
+  it('rebuilds the usercenter session from laohu credentials when refresh is rejected', async () => {
+    const secretWriter = vi.fn()
+    const api = {
+      refreshToken: vi.fn().mockRejectedValue(new Error('REFRESH_REJECTED_402: refreshToken 已失效，请重新登录')),
+      userCenterLogin: vi.fn().mockResolvedValue({ accessToken: 'rebuilt-access', refreshToken: 'rebuilt-refresh', uid: '1' }),
+      getGameRoles: vi.fn()
+        .mockRejectedValueOnce(new Error('AUTH_EXPIRED: token expired'))
+        .mockResolvedValueOnce({ roles: [{ roleId: 'role-1256-a', roleName: '幻塔A' }] })
+        .mockResolvedValueOnce({ roles: [] })
+        .mockResolvedValueOnce({ roles: [] }),
+      appSignin: vi.fn().mockResolvedValue({ exp: 10, goldCoin: 20 }),
+      getSigninState: vi.fn().mockResolvedValue({ days: 1 }),
+      getSigninRewards: vi.fn().mockResolvedValue([{ name: '奖励一', num: 1 }]),
+      gameSignin: vi.fn().mockResolvedValue(undefined),
+    }
+
+    const result = await runAttendance({
+      accountsSecret: JSON.stringify([
+        {
+          id: 'main',
+          name: '主账号',
+          uid: '1',
+          deviceId: 'device-1',
+          accessToken: 'stored-access',
+          refreshToken: 'old-main',
+          laohuToken: 'laohu-token',
+          laohuUserId: 'laohu-user',
+        },
+      ]),
+      api,
+      maxRetries: 1,
+      secretWriter,
+    })
+
+    expect(api.userCenterLogin).toHaveBeenCalledWith('laohu-token', 'laohu-user', 'device-1')
+    expect(result.updatedAccounts[0]).toEqual(expect.objectContaining({
+      accessToken: 'rebuilt-access',
+      refreshToken: 'rebuilt-refresh',
+      laohuToken: 'laohu-token',
+      laohuUserId: 'laohu-user',
+      tokenUpdatedAt: expect.any(String),
+    }))
+    expect(secretWriter).toHaveBeenCalledWith(JSON.stringify(result.updatedAccounts, null, 2))
+  })
+
+  it('does not write the secret when refresh is rejected and no laohu credentials are available', async () => {
+    const secretWriter = vi.fn()
+    const api = {
+      refreshToken: vi.fn().mockRejectedValue(new Error('REFRESH_REJECTED_402: refreshToken 已失效，请重新登录')),
+      userCenterLogin: vi.fn(),
+      getGameRoles: vi.fn(),
+      appSignin: vi.fn(),
+      getSigninState: vi.fn(),
+      getSigninRewards: vi.fn(),
+      gameSignin: vi.fn(),
+    }
+
+    const result = await runAttendance({
+      accountsSecret: JSON.stringify([
+        {
+          id: 'main',
+          name: '主账号',
+          uid: '1',
+          deviceId: 'device-1',
+          refreshToken: 'old-main',
+        },
+      ]),
+      api,
+      maxRetries: 1,
+      secretWriter,
+    })
+
+    expect(secretWriter).not.toHaveBeenCalled()
+    expect(result.updatedAccounts[0]?.refreshToken).toBe('old-main')
+    expect(result.summary).toContain('refreshToken 已失效')
   })
 
   it('retries transient account failures before marking an account failed', async () => {
