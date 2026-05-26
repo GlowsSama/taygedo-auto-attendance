@@ -101,6 +101,51 @@ describe('runLocalCli', () => {
     }))
   })
 
+  it('falls back to the legacy password env when login password env is blank', async () => {
+    const originalLoginPassword = process.env.TAYGEDO_LOGIN_PASSWORD
+    const originalPassword = process.env.TAYGEDO_PASSWORD
+    process.env.TAYGEDO_LOGIN_PASSWORD = ''
+    process.env.TAYGEDO_PASSWORD = 'legacy-env-password'
+    const service = {
+      runAttendance: vi.fn(),
+      runLogin: vi.fn().mockResolvedValue(undefined),
+      sendLoginCode: vi.fn(),
+      updateDevices: vi.fn(),
+    }
+
+    try {
+      await runLocalCli([
+        'login',
+        '--mode',
+        'password',
+        '--phone',
+        '13800138000',
+        '--account-id',
+        'main',
+        '--accounts-file',
+        'accounts.json',
+      ], { service })
+    }
+    finally {
+      if (originalLoginPassword === undefined) {
+        delete process.env.TAYGEDO_LOGIN_PASSWORD
+      }
+      else {
+        process.env.TAYGEDO_LOGIN_PASSWORD = originalLoginPassword
+      }
+      if (originalPassword === undefined) {
+        delete process.env.TAYGEDO_PASSWORD
+      }
+      else {
+        process.env.TAYGEDO_PASSWORD = originalPassword
+      }
+    }
+
+    expect(service.runLogin).toHaveBeenCalledWith(expect.objectContaining({
+      password: 'legacy-env-password',
+    }))
+  })
+
   it('passes a credential key file option to password login', async () => {
     const service = {
       runAttendance: vi.fn(),

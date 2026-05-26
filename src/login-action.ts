@@ -22,12 +22,12 @@ export async function runLoginAction(deps: LoginActionDependencies = {}): Promis
   const mode = requireEnv(env, 'TAYGEDO_LOGIN_MODE')
   const phone = requireEnv(env, 'TAYGEDO_LOGIN_PHONE')
   const api = deps.api ?? new TaygedoApi()
-  const accountsPath = env.TAYGEDO_LOGIN_UPDATED_ACCOUNTS_PATH ?? env.TAYGEDO_UPDATED_ACCOUNTS_PATH ?? 'updated-accounts.json'
+  const accountsPath = optionalEnv(env, 'TAYGEDO_LOGIN_UPDATED_ACCOUNTS_PATH') ?? optionalEnv(env, 'TAYGEDO_UPDATED_ACCOUNTS_PATH') ?? 'updated-accounts.json'
 
   if (mode === 'send-code') {
     const device = resolveDeviceIdentity(env, deps)
     await api.sendCaptcha(phone, device.deviceId)
-    const devicePath = env.TAYGEDO_LOGIN_DEVICE_ID_PATH
+    const devicePath = optionalEnv(env, 'TAYGEDO_LOGIN_DEVICE_ID_PATH')
     if (devicePath) {
       await writeTextFile(devicePath, `${device.deviceId}\n`)
     }
@@ -80,9 +80,10 @@ export async function runLoginAction(deps: LoginActionDependencies = {}): Promis
       credentialKey = generateCredentialKey()
       await deps.writeCredentialKey(credentialKey)
     }
-    if (!credentialKey && env.TAYGEDO_CREDENTIAL_KEY_PATH) {
+    const credentialKeyPath = optionalEnv(env, 'TAYGEDO_CREDENTIAL_KEY_PATH')
+    if (!credentialKey && credentialKeyPath) {
       credentialKey = generateCredentialKey()
-      await writeTextFile(env.TAYGEDO_CREDENTIAL_KEY_PATH, `${credentialKey}\n`)
+      await writeTextFile(credentialKeyPath, `${credentialKey}\n`)
     }
     if (credentialKey && password) {
       nextAccount.encryptedPassword = encryptPassword(password, credentialKey)
@@ -95,7 +96,8 @@ export async function runLoginAction(deps: LoginActionDependencies = {}): Promis
     nextAccount.roleName = role.roleName
   }
 
-  const currentAccounts = env.TAYGEDO_ACCOUNTS ? parseAccountsSecret(env.TAYGEDO_ACCOUNTS) : []
+  const currentAccountsSecret = optionalEnv(env, 'TAYGEDO_ACCOUNTS')
+  const currentAccounts = currentAccountsSecret ? parseAccountsSecret(currentAccountsSecret) : []
   const updatedAccounts = upsertAccount(currentAccounts, nextAccount)
   const payload = JSON.stringify(updatedAccounts, null, 2)
   if (deps.writeAccounts) {

@@ -170,6 +170,51 @@ describe('runLoginAction', () => {
     }
   })
 
+  it('uses the default updated accounts path when optional output paths are blank', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'taygedo-login-blank-path-'))
+    const accountsPath = join(dir, 'updated-accounts.json')
+    const api = {
+      sendCaptcha: vi.fn(),
+      checkCaptcha: vi.fn(),
+      loginWithCaptcha: vi.fn(),
+      loginWithPassword: vi.fn().mockResolvedValue({ token: 'laohu-token', userId: 'laohu-user' }),
+      userCenterLogin: vi.fn().mockResolvedValue({
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        uid: 'tjd-uid',
+      }),
+      getBindRole: vi.fn().mockResolvedValue({}),
+    }
+    const cwd = process.cwd()
+
+    try {
+      process.chdir(dir)
+      await runLoginAction({
+        env: {
+          TAYGEDO_LOGIN_MODE: 'password',
+          TAYGEDO_LOGIN_PHONE: '13800138000',
+          TAYGEDO_LOGIN_PASSWORD: 'secret-password',
+          TAYGEDO_LOGIN_ACCOUNT_ID: 'main',
+          TAYGEDO_LOGIN_UPDATED_ACCOUNTS_PATH: '',
+          TAYGEDO_UPDATED_ACCOUNTS_PATH: '',
+          TAYGEDO_CREDENTIAL_KEY_PATH: '',
+          TAYGEDO_ACCOUNTS: '',
+        },
+        api,
+        generateDeviceIdentity: () => ({ deviceId: 'device-generated', openudid: 'OPEN-GENERATED', vendorid: 'VENDOR-GENERATED' }),
+      })
+
+      expect(JSON.parse(await readFile(accountsPath, 'utf8'))[0]).toEqual(expect.objectContaining({
+        id: 'main',
+        phone: '13800138000',
+      }))
+    }
+    finally {
+      process.chdir(cwd)
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
   it('writes tokenUpdatedAt using Asia/Shanghai offset', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'taygedo-login-shanghai-time-'))
     const accountsPath = join(dir, 'updated-accounts.json')

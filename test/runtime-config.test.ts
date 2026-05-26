@@ -28,6 +28,40 @@ describe('loadRuntimeConfig', () => {
     }))
   })
 
+  it('uses the default retry count when the env value is blank', () => {
+    expect(loadRuntimeConfig({
+      TAYGEDO_MAX_RETRIES: '',
+    })).toEqual(expect.objectContaining({
+      maxRetries: 3,
+    }))
+  })
+
+  it('treats blank optional workflow values as unset', () => {
+    expect(loadRuntimeConfig({
+      TAYGEDO_NOTIFICATION_URLS: '',
+      TAYGEDO_SERVERCHAN_SENDKEY: '',
+      TAYGEDO_MAX_RETRIES: '',
+      TAYGEDO_PASSWORDS: '',
+      TAYGEDO_LOGIN_PASSWORD: '',
+      TAYGEDO_CREDENTIAL_KEY: '',
+      TAYGEDO_COIN_TASKS: '',
+      TAYGEDO_SHARE_PLATFORM: '',
+      TAYGEDO_LOOP_SECONDS: '',
+      TAYGEDO_UPSTASH_REDIS_REST_URL: '',
+      TAYGEDO_UPSTASH_REDIS_REST_TOKEN: '',
+    })).toEqual(expect.objectContaining({
+      notificationUrls: [],
+      maxRetries: 3,
+      accountPasswords: {},
+      credentialKey: undefined,
+      coinTasks: true,
+      sharePlatform: 'qq',
+      loopSeconds: undefined,
+      upstashUrl: undefined,
+      upstashToken: undefined,
+    }))
+  })
+
   it('loads coin task options from env', () => {
     expect(loadRuntimeConfig({
       TAYGEDO_COIN_TASKS: 'false',

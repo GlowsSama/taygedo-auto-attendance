@@ -45,7 +45,7 @@ export async function runLocalCli(argv = process.argv.slice(2), deps: LocalCliDe
     await service.runLogin({
       mode: requireOption(options, 'mode'),
       phone: requireOption(options, 'phone'),
-      password: options.password ?? process.env.TAYGEDO_LOGIN_PASSWORD ?? process.env.TAYGEDO_PASSWORD,
+      password: optionalValue(options.password) ?? optionalValue(process.env.TAYGEDO_LOGIN_PASSWORD) ?? optionalValue(process.env.TAYGEDO_PASSWORD),
       captcha: options.captcha,
       deviceId: options['device-id'],
       newDevice: options['new-device'] === 'true' || options['new-device'] === '1' || options['new-device'] === '',
@@ -95,8 +95,8 @@ function createDefaultService(): LocalCliService {
       }).run()
     },
     async runLogin(options) {
-      const credentialKeyPath = options.credentialKeyPath ?? process.env.TAYGEDO_CREDENTIAL_KEY_PATH
-      const generatedCredentialKey = options.credentialKey ?? process.env.TAYGEDO_CREDENTIAL_KEY ?? (credentialKeyPath
+      const credentialKeyPath = optionalValue(options.credentialKeyPath) ?? optionalValue(process.env.TAYGEDO_CREDENTIAL_KEY_PATH)
+      const generatedCredentialKey = optionalValue(options.credentialKey) ?? optionalValue(process.env.TAYGEDO_CREDENTIAL_KEY) ?? (credentialKeyPath
         ? await loadOrCreateCredentialKey(credentialKeyPath)
         : undefined)
       await new LoginService().runLogin({
@@ -147,6 +147,13 @@ function requireOption(options: Record<string, string | undefined>, key: string)
   const value = options[key]
   if (!value) {
     throw new Error(`缺少必需参数 --${key}`)
+  }
+  return value
+}
+
+function optionalValue(value: string | undefined): string | undefined {
+  if (!value || value.trim() === '') {
+    return undefined
   }
   return value
 }

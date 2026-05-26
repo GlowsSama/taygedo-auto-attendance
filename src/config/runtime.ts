@@ -32,7 +32,7 @@ export function loadRuntimeConfig(env: Record<string, string | undefined>): Runt
       ...splitComma(env.TAYGEDO_NOTIFICATION_URLS),
       ...serverChanUrls(env.TAYGEDO_SERVERCHAN_SENDKEY),
     ],
-    maxRetries: parsePositiveInteger(env.TAYGEDO_MAX_RETRIES ?? '3', 'TAYGEDO_MAX_RETRIES'),
+    maxRetries: parsePositiveInteger(optionalEnv(env, 'TAYGEDO_MAX_RETRIES') ?? '3', 'TAYGEDO_MAX_RETRIES'),
     updatedAccountsPath: optionalEnv(env, 'TAYGEDO_UPDATED_ACCOUNTS_PATH') ?? 'updated-accounts.json',
     accountStore: parseAccountStore(optionalEnv(env, 'TAYGEDO_ACCOUNT_STORE') ?? 'env'),
     stateStore: parseStateStore(optionalEnv(env, 'TAYGEDO_STATE_STORE') ?? 'memory'),
