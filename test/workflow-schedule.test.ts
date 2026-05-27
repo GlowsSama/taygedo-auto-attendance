@@ -35,6 +35,7 @@ describe('scheduled attendance time', () => {
     expect(workflow).toContain("cron: '0 0 1,15 * *'")
     expect(workflow).toContain("if: github.repository == 'zzstar101/taygedo-auto-attendance'")
     expect(workflow).toContain('contents: write')
-    expect(workflow).toContain('git commit --allow-empty -m "chore: keep workflows active [skip ci]"')
+    expect(workflow).toContain('run: |\n          git commit --allow-empty -m "chore: keep workflows active [skip ci]"')
+    expect(workflow).toContain('run: |\n          git push origin HEAD:main')
   })
 })
